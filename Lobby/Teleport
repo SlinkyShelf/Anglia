@@ -1,0 +1,12 @@
+local TeleportService = game:GetService("TeleportService")
+
+local TeleportEvent = game.ReplicatedStorage.Events.Teleport
+
+local LocationTable = {
+	TestPlace = 6290001842
+}
+
+TeleportEvent.OnServerEvent:Connect(function(plr, Location, SlotNumber)
+	print("GotTeleport")
+	TeleportService:Teleport(LocationTable[Location], plr, SlotNumber)
+end)

@@ -1,0 +1,117 @@
+--Services
+local Players = game:GetService("Players")
+
+local DataTemplate = require(script.PlayerDataTemplate)
+local ClientDataModule = game.ReplicatedStorage.ClientData
+local DataStore2 = require(script.Parent.DataStore2)
+
+DataStore2.Combine("TestData1", "Slot1")
+DataStore2.Combine("TestData1", "Slot2")
+DataStore2.Combine("TestData1", "Slot3")
+DataStore2.Combine("TestData1", "PermanentData")
+
+local Loading = game.ReplicatedStorage.Loading
+local Events = game.ReplicatedStorage.Events
+local PlayerDataUpdate = Events.DataUpdate
+local GetData = Events.GetData
+
+local PlayerData = {}
+local DataUpdateMethods = {}
+for i, v in pairs(script.DataUpdateMethods:GetChildren()) do
+	DataUpdateMethods[v.Name] = require(v)
+end
+
+
+local function Check(Table, Template)
+	local Updated = false
+	for i, v in pairs(Template) do
+		if typeof(Table[i]) == typeof(v) then
+			if typeof(v) == "table" then
+				if Check(Table[i], v) then
+					Updated = true
+				end
+			end
+		else
+			Table[i] = Template[i]
+			Updated = true
+		end
+	end
+	return Updated
+end
+
+local function SaveData(plr)
+	local newPlayerData = PlayerData[plr.Name]
+	local DataStores = newPlayerData.DataStores
+	for i, v in pairs(newPlayerData.Data) do
+		DataStores[i]:Set(v)
+	end
+	
+	
+end
+
+Players.PlayerAdded:Connect(function(plr)
+	local Slot1DataStore = DataStore2("Slot1", plr)
+	local Slot2DataStore = DataStore2("Slot2", plr)
+	local Slot3DataStore = DataStore2("Slot3", plr)
+	local PermanentDataStore = DataStore2("PermanentData", plr)
+	
+	local Slot1 = Slot1DataStore:Get(DataTemplate.SaveSlotTemplate)
+	local Slot2 = Slot2DataStore:Get(DataTemplate.SaveSlotTemplate)
+	local Slot3 = Slot3DataStore:Get(DataTemplate.SaveSlotTemplate)
+	local PermanentData = PermanentDataStore:Get(DataTemplate.PermanentData)
+	
+	local Updated = false
+	
+	Updated = Updated or Check(Slot1, DataTemplate.SaveSlotTemplate)
+	Updated = Updated or Check(Slot2, DataTemplate.SaveSlotTemplate)
+	Updated = Updated or Check(Slot3, DataTemplate.SaveSlotTemplate)
+	Updated = Updated or Check(PermanentData, DataTemplate.PermanentData)
+	
+	PlayerData[plr.Name] = {
+		Data = {
+			Slot1,
+			Slot2,
+			Slot3,
+			PermanentData = PermanentData,
+		},
+		DataStores = {
+			Slot1DataStore,
+			Slot2DataStore,
+			Slot3DataStore,
+			PermanentData = PermanentDataStore,
+		}
+	}
+	
+	if PermanentData.FirstTime then
+		PermanentData.FirstTime = false
+		SaveData(plr)
+	end
+	
+	PermanentData.TimesJoined = PermanentData.TimesJoined+1
+	print(PermanentData.TimesJoined)
+	
+	SaveData(plr)
+	
+	Loading.ServerPlayer:WaitForChild(plr.Name).DataGrabbed.Value = true
+end)
+
+PlayerDataUpdate.OnServerEvent:Connect(function(plr, DataMethod, Arg1, Arg2, Arg3, Arg4)
+	if DataUpdateMethods[DataMethod].ClientFire then
+		DataUpdateMethods[DataMethod].Fire(PlayerData[plr.Name].Data, Arg1, Arg2, Arg3, Arg4)
+		PlayerDataUpdate:FireClient(plr, PlayerData[plr.Name].Data)
+		SaveData(plr)
+	end
+end)
+
+function PlayerData:DataMethod(plr, DataMethod, Arg1, Arg2, Arg3, Arg4)
+	DataUpdateMethods[DataMethod].Fire(PlayerData[plr.Name].Data, Arg1, Arg2, Arg3, Arg4)
+	PlayerDataUpdate:FireClient(PlayerData[plr.Name].Data)
+	SaveData(plr)
+end
+
+GetData.OnServerInvoke = function(plr)
+	return PlayerData[plr.Name].Data
+end
+
+
+return PlayerData

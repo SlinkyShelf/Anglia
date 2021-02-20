@@ -1,0 +1,12 @@
+local module = {}
+
+game.Players.PlayerAdded:Connect(function(plr)
+	local newPlayer = {}
+	local Character = plr.Character or plr.CharacterAdded:Wait()
+	newPlayer.Character = Character
+	newPlayer.Humanoid = Character.Humanoid
+	newPlayer.HumanoidRootPart = Character.HumanoidRootPart
+	module[plr.Name] = newPlayer
+end)
+
+return module

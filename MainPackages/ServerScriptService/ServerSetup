@@ -1,0 +1,69 @@
+local CollectionService = game:GetService("CollectionService")
+
+game.Players.CharacterAutoLoads = false
+
+local function Unpack(Model, Parent)
+	Model.Primary:Destroy()
+	for i, v in pairs(Model:GetChildren()) do
+		if not v:IsA("PackageLink") then
+			v.Parent = Parent
+		end
+	end
+	Model:Destroy()
+end
+
+local function AddTagToDesendants(Obj, Tag)
+	for i, v in pairs(Obj:GetDesendants()) do
+		if v:IsA("BasePart") then
+			CollectionService:AddTag(v, Tag)
+		end
+	end
+end
+
+local RF = game.ReplicatedFirst
+local RP = game.ReplicatedStorage
+local ServerScriptService = game.ServerScriptService
+local StarterGui = game.StarterGui
+local StarterPlayer = game.StarterPlayer
+local StarterPlayerScripts = StarterPlayer.StarterPlayerScripts
+local StarterCharacterScripts = StarterPlayer.StarterCharacterScripts
+
+Unpack(RF.ReplicatedFirst, RF)
+Unpack(RP.ReplicatedStorage, RP)
+Unpack(ServerScriptService.ServerScriptService, ServerScriptService)
+Unpack(StarterGui.StarterGui, StarterGui)
+Unpack(StarterPlayerScripts.StarterPlayerScripts, StarterPlayerScripts)
+Unpack(StarterCharacterScripts.StarterCharacterScripts, StarterCharacterScripts)
+
+local StarterCharacter = StarterPlayer:FindFirstChild("StarterCharacter")
+
+--Setting Up RP
+
+--Player
+for i, v in pairs(game.Players:GetChildren()) do
+	print("Setup"..v.Name)
+	local newCharacter = StarterCharacter:Clone()
+	newCharacter.Name = v.Name
+	newCharacter.Parent = workspace
+	v.Character = newCharacter
+	for i, v in pairs(StarterPlayer.StarterCharacterScripts) do
+		local newAsset = v:Clone()
+		newAsset.Parent = newCharacter
+	end
+end
+
+local LoadingObject = game.ReplicatedStorage.Loading
+local LoadingTemplate = LoadingObject.ServerPlayer.Template
+
+game.Players.PlayerAdded:Connect(function(plr)
+	local newTemplate = LoadingTemplate:Clone()
+	newTemplate.Name = plr.Name
+	newTemplate.Parent = LoadingObject.ServerPlayer
+end)
+
+game.ReplicatedStorage.Loading.Server.DoneUnpacking.Value = true
+game.Players.CharacterAutoLoads = true
+
+require(game.ServerScriptService.PlayerData)
+
+

@@ -1,0 +1,164 @@
+--[[Services]]--
+local RunService = game:GetService("RunService")
+local CollectionService = game:GetService("CollectionService")
+
+local PlayerData = require(game.ServerScriptService:WaitForChild("PlayerData"))
+local PlayerActions = require(game.ServerScriptService.PlayerActionManager)
+local Items = require(game.ReplicatedStorage.Items)
+
+--[[Constants]]--
+local ResourceAssets = game.ReplicatedStorage:WaitForChild("Assets").Resources
+
+local Events = game.ReplicatedStorage.Events
+
+local module = {}
+
+local ResourceNodes = {}
+local ResourceNodeModels = {}
+local ResourceData = {}
+
+local LowSearchRate = 5
+local RespawnRate = 20
+
+--[[Variables]]--
+local DroppedItems = {}
+local CloseNodes = {}
+local CloseNodeCount = 0
+
+local NextSearch = 0
+local CurrentTick = 0
+
+--[[Functions]]--
+local function AddTagToDesendants(Obj, Tag)
+	for i, v in pairs(Obj:GetDescendants()) do
+		if v:IsA("BasePart") then
+			CollectionService:AddTag(v, Tag)
+		end
+	end
+end
+
+local function LowSearch(Tick, DeltaTime)
+	for i, v in pairs(ResourceNodes) do
+		if v.Waiting and Tick > v.NextPriority then
+			v.Waiting = false
+			CloseNodes[tostring(i)] = v --Making it a dictionary
+			CloseNodeCount = CloseNodeCount + 1
+		end
+	end
+end
+
+local function Check(Tick, DeltaTime)
+	local Removes = 0
+	for i, Node in pairs(CloseNodes) do
+		if Tick > Node.NextRefill then
+			--Allowing for Refill
+			Node.Waiting = false
+
+			ResourceData[Node.ResourceType].Refresh(Node)
+
+			CloseNodes[i] = nil
+			CloseNodeCount = CloseNodeCount - 1
+		end
+	end
+end
+
+local function CreateKey(Check)
+	local newKey = ""
+	for i = 1, 10 do
+		newKey = newKey..math.random(1, 10)
+	end
+	if Check[newKey] then
+		newKey = CreateKey(Check)
+	end
+	return newKey
+end
+
+function module.SpawnItem(Item, GivenCFrame, Physics, Parent)
+	if not Items.ItemData[Item.ItemName] then
+		error(Item.ItemName.." is not an Item")
+	end
+	
+	local newItem = {}
+	
+	local Key = CreateKey(DroppedItems)
+	newItem.Key = Key
+	
+	local newModel = Items.ItemData[Item.ItemName].Model:Clone()
+	newModel.PrimaryPart.Anchored = not Physics
+	newModel:SetPrimaryPartCFrame(GivenCFrame)
+	newModel:SetAttribute("ItemKey", Key)
+	AddTagToDesendants(newModel, "DroppedItem")
+	newModel.Parent = Parent
+	
+	newItem.Model = newModel
+	
+	newItem.Item = Item
+	
+	DroppedItems[Key] = newItem
+	
+end
+
+--[[Main]]--
+AddTagToDesendants(ResourceAssets, "Resource")
+
+for i, v in pairs(script:GetChildren()) do
+	ResourceData[v.Name] = require(v)
+end
+
+for i, v in pairs(workspace.Colectables:GetChildren()) do
+	--Setting Up Table
+	local newNode = {}
+	newNode.CFrame = v.CFrame
+	newNode.Resource = v.Resource.Value
+	newNode.ResourceType = ResourceData[newNode.Resource].Parent
+	newNode.ModelVersion = v.ModelVersion.Value
+
+	newNode.NextRefill = 0
+	newNode.NextPriority = 0
+	newNode.Index = tostring(i)
+	newNode.Waiting = false
+
+	local Index = #ResourceNodes+1
+
+	ResourceNodes[Index] =  newNode
+
+	--Setting up Physical Node
+	local NodeModel = ResourceAssets[newNode.ResourceType][newNode.Resource][newNode.ModelVersion]:Clone()
+	NodeModel:SetAttribute("Index", Index)
+	NodeModel:SetPrimaryPartCFrame(newNode.CFrame)
+	newNode.Model = NodeModel
+	NodeModel.Parent = workspace.Colectables
+end
+
+function PlayerActions.Gather(plr, Index)
+	local Node = ResourceNodes[Index]
+
+	ResourceData[Node.ResourceType].Collect(plr, Node)
+	PlayerData:DataMethod(plr, "PickupItem", {ItemName = "BronzeOre", Quantity = 1})
+
+	Node.Waiting = true
+	Node.NextRefill = CurrentTick + RespawnRate
+	Node.NextPriority = Node.NextRefill - LowSearchRate
+end
+
+function PlayerActions.PickUpDroppedItem(plr, Key)
+	local Item = DroppedItems[Key]
+	PlayerData:DataMethod(plr, "PickUpItem", Item.Item)
+	Item.Model:Destroy()
+	DroppedItems[Key] = nil
+end
+
+RunService.Stepped:Connect(function(Tick, DeltaTime)
+	CurrentTick = Tick
+	NextSearch = NextSearch + DeltaTime
+
+	if NextSearch > LowSearchRate then
+		NextSearch = 0
+		LowSearch(Tick, DeltaTime)
+	end
+	if CloseNodeCount > 0 then
+		Check(Tick, DeltaTime)
+	end
+end)
+
+return module

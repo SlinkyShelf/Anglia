@@ -5,25 +5,27 @@ local TeleportService = game:GetService("TeleportService")
 local DataTemplate = require(script.PlayerDataTemplate)
 local ClientDataModule = game.ReplicatedStorage.ClientData
 local DataStore2 = require(script.Parent.DataStore2)
+local LoadCharacter = require(game.ReplicatedStorage.LoadCharacter)
 
-DataStore2.Combine("TestData1", "Slot1")
-DataStore2.Combine("TestData1", "Slot2")
-DataStore2.Combine("TestData1", "Slot3")
-DataStore2.Combine("TestData1", "PermanentData")
+DataStore2.Combine(DataTemplate.Key, "Slot1")
+DataStore2.Combine(DataTemplate.Key, "Slot2")
+DataStore2.Combine(DataTemplate.Key, "Slot3")
+DataStore2.Combine(DataTemplate.Key, "PermanentData")
 
 local Loading = game.ReplicatedStorage.Loading
 local Events = game.ReplicatedStorage.Events
-local PlayerDataUpdate = Events.DataUpdate
-local GetData = Events.GetData
-local SetSlot = Events.SetSlot
+local DataEvents = Events.Data
+local PlayerDataUpdate = DataEvents.DataUpdate
+local GetData = DataEvents.GetData
+local SetSlot = DataEvents.SetSlot
 
 local PlayerCurrentSlot = {}
 local PlayerData = {}
 local DataUpdateMethods = {}
+local PlayerDataStores = {}
 for i, v in pairs(script.DataUpdateMethods:GetChildren()) do
 	DataUpdateMethods[v.Name] = require(v)
 end
-
 
 local function Check(Table, Template)
 	local Updated = false
@@ -44,12 +46,16 @@ end
 
 local function SaveData(plr)
 	local newPlayerData = PlayerData[plr.Name]
-	local DataStores = newPlayerData.DataStores
-	for i, v in pairs(newPlayerData.DataStores) do
-		DataStores[i]:Set(newPlayerData[i])
-	end
+	local DataStores = PlayerDataStores[plr.Name]
+	DataStores["SlotData"]:Set(newPlayerData["SlotData"])
+	DataStores["PermanentData"]:Set(newPlayerData["PermanentData"])
+	print("Saved")
 	
-	
+end
+
+function PlayerData:UpdateData(plr)
+	PlayerDataUpdate:FireClient(plr, PlayerData[plr.Name])
+	SaveData(plr)
 end
 
 Players.PlayerAdded:Connect(function(plr)
@@ -57,7 +63,7 @@ Players.PlayerAdded:Connect(function(plr)
 		wait()
 	end
 	
-	print(PlayerCurrentSlot[plr.Name])
+	--print(PlayerCurrentSlot[plr.Name])
 	
 	local SlotDataStore = DataStore2("Slot"..PlayerCurrentSlot[plr.Name], plr)
 	local PermanentDataStore = DataStore2("PermanentData", plr)
@@ -69,20 +75,18 @@ Players.PlayerAdded:Connect(function(plr)
 	Check(PermanentData, DataTemplate.PermanentData)
 	
 	PlayerData[plr.Name] = {
-		Data = {
-			SelectedSlot = PlayerCurrentSlot[plr.Name],
-			SlotData = SlotData,
-			PermanentData = PermanentData,
-		},
-		DataStores = {
-			SlotData = SlotDataStore,
-			PermanentData = PermanentDataStore,
-		}
+		SelectedSlot = PlayerCurrentSlot[plr.Name],
+		SlotData = SlotData,
+		PermanentData = PermanentData
+	}
+	
+	PlayerDataStores[plr.Name] = {
+		SlotData = SlotDataStore,
+		PermanentData = PermanentDataStore
 	}
 	
 	if PermanentData.FirstTime then
 		PermanentData.FirstTime = false
-		SaveData(plr)
 	end
 	
 	PermanentData.TimesJoined = PermanentData.TimesJoined+1
@@ -90,24 +94,19 @@ Players.PlayerAdded:Connect(function(plr)
 	SaveData(plr)
 	
 	Loading.ServerPlayer:WaitForChild(plr.Name).DataGrabbed.Value = true
-end)
-
-PlayerDataUpdate.OnServerEvent:Connect(function(plr, DataMethod, Arg1, Arg2, Arg3, Arg4)
-	if DataUpdateMethods[DataMethod].ClientFire then
-		DataUpdateMethods[DataMethod].Fire(PlayerData[plr.Name].Data, Arg1, Arg2, Arg3, Arg4)
-		PlayerDataUpdate:FireClient(plr, PlayerData[plr.Name].Data)
-		SaveData(plr)
-	end
+	
+	local Character = plr.Character or plr.CharacterAdded:Connect()
+	LoadCharacter.SetUpCharacter(Character)
+	LoadCharacter.LoadCharacter(Character, PlayerData[plr.Name].SlotData)
 end)
 
 function PlayerData:DataMethod(plr, DataMethod, Arg1, Arg2, Arg3, Arg4)
-	DataUpdateMethods[DataMethod].Fire(PlayerData[plr.Name].Data, Arg1, Arg2, Arg3, Arg4)
-	PlayerDataUpdate:FireClient(PlayerData[plr.Name].Data)
-	SaveData(plr)
+	DataUpdateMethods[DataMethod].Fire(PlayerData[plr.Name], Arg1, Arg2, Arg3, Arg4)
+	PlayerData:UpdateData(plr)
 end
 
 GetData.OnServerInvoke = function(plr)
-	return PlayerData[plr.Name].Data
+	return PlayerData[plr.Name]
 end
 
 SetSlot.OnServerEvent:Connect(function(plr, SlotNumber)
